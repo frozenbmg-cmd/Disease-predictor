@@ -9,70 +9,87 @@ if not os.path.exists("model.pkl"):
 
 model = load_model()
 
-st.set_page_config(page_title="AI Health System")
+st.set_page_config(page_title="AI Health System", page_icon="🩺")
 
-# ---------- NLP ----------
+# ---------- UI STYLE ----------
+st.markdown("""
+<style>
+body {
+    background-color: #0E1117;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ---------- SMART NLP ----------
 def extract(text):
     text = text.lower()
 
-    return [
-        int("fever" in text),
-        int("cough" in text or "cold" in text or "running nose" in text),
-        int("headache" in text),
-        int("fatigue" in text or "tired" in text),
-        int("body pain" in text),
-        int("diarrhea" in text),
-        int("vomit" in text),
-        int("throat" in text),
-        int("chill" in text),
-        int("nausea" in text),
-        int("runny nose" in text),
-        int("congestion" in text),
-        int("sneeze" in text),
-        int("dizziness" in text),
-        int("abdominal" in text or "stomach" in text or "bloating" in text),
-        int("chest pain" in text),
-        int("breath" in text),
-        int("rash" in text),
-        int("itch" in text),
-        int("weight loss" in text),
-        int("appetite" in text)
-    ]
+    symptom_dict = {
+        "fever": ["fever", "temperature", "high temp"],
+        "cough": ["cough", "cold", "dry cough"],
+        "headache": ["headache", "head pain"],
+        "fatigue": ["fatigue", "tired", "weak"],
+        "body_pain": ["body pain", "body ache"],
+        "diarrhea": ["diarrhea", "loose motion"],
+        "vomiting": ["vomit", "vomiting"],
+        "sore_throat": ["throat", "sore throat"],
+        "chills": ["chill", "shiver"],
+        "nausea": ["nausea"],
+        "runny_nose": ["runny nose", "running nose"],
+        "congestion": ["blocked nose", "congestion"],
+        "sneezing": ["sneeze", "sneezing"],
+        "dizziness": ["dizziness", "light headed"],
+        "abdominal_pain": ["stomach", "abdominal", "bloating", "gas"],
+        "chest_pain": ["chest pain"],
+        "breathlessness": ["breath", "breathing issue"],
+        "rash": ["rash"],
+        "itching": ["itch", "itching"],
+        "weight_loss": ["weight loss"],
+        "loss_of_appetite": ["appetite", "not eating"]
+    }
+
+    features = []
+    for key in symptom_dict:
+        found = any(word in text for word in symptom_dict[key])
+        features.append(int(found))
+
+    return features
 
 # ---------- AUTH ----------
 if "user" not in st.session_state:
     st.session_state.user = None
 
 if st.session_state.user is None:
-    st.title("Login / Register")
+    st.title("🔐 Login / Register")
 
-    mode = st.selectbox("Mode", ["Login","Register"])
+    mode = st.selectbox("Mode", ["Login", "Register"])
     u = st.text_input("Username")
     p = st.text_input("Password", type="password")
 
     if mode == "Register":
         if st.button("Register"):
-            if register(u,p):
+            if register(u, p):
                 st.success("Registered")
             else:
                 st.error("User exists")
 
     else:
         if st.button("Login"):
-            if login(u,p):
+            if login(u, p):
                 st.session_state.user = u
                 st.rerun()
             else:
                 st.error("Invalid login")
 
+# ---------- MAIN ----------
 else:
-    st.sidebar.title(st.session_state.user)
-    page = st.sidebar.radio("Menu",["Chat","History"])
+    st.sidebar.title(f"👤 {st.session_state.user}")
+    page = st.sidebar.radio("Menu", ["Chat", "History", "About"])
 
     if page == "Chat":
-        st.title("AI Health Assistant")
+        st.title("🩺 AI Health Assistant")
 
-        user_input = st.text_input("Enter symptoms")
+        user_input = st.text_input("Describe your symptoms...")
 
         if st.button("Predict"):
             f = extract(user_input)
@@ -83,20 +100,54 @@ else:
             results = list(zip(diseases, probs))
             results.sort(key=lambda x: x[1], reverse=True)
 
-            # remove healthy if symptoms exist
+            # Remove healthy if symptoms exist
             if sum(f) >= 2:
                 results = [r for r in results if r[0].lower() != "healthy"]
 
-            top = results[0][0]
+            top3 = results[:3]
 
-            st.success(f"Predicted: {top}")
+            # ---------- UI ----------
+            st.markdown("## 🩺 Prediction Result")
+
+            for i, (d, p) in enumerate(top3):
+                color = "#00C853" if i == 0 else "#FFD600" if i == 1 else "#FF5252"
+
+                st.markdown(f"""
+                <div style="
+                    background: #1e1e2f;
+                    padding: 20px;
+                    border-radius: 12px;
+                    margin-bottom: 10px;
+                    box-shadow: 0px 0px 10px rgba(0,0,0,0.5);
+                ">
+                    <h3 style="color:{color};">{i+1}. {d}</h3>
+                    <p style="color:#aaa;">Confidence: {round(p*100,2)}%</p>
+                </div>
+                """, unsafe_allow_html=True)
 
             save_history(st.session_state.user, {
                 "input": user_input,
-                "result": top
+                "result": top3[0][0]
             })
 
     elif page == "History":
-        st.title("History")
-        for item in get_history(st.session_state.user)[::-1]:
-            st.write(f"{item['input']} → {item['result']}")
+        st.title("📜 History")
+
+        history = get_history(st.session_state.user)[::-1]
+
+        for item in history:
+            st.markdown(f"""
+            <div style="
+                background: #1e1e2f;
+                padding: 15px;
+                border-radius: 10px;
+                margin-bottom: 10px;
+            ">
+                <b>🧾 Input:</b> {item['input']}<br>
+                <b>🩺 Result:</b> {item['result']}
+            </div>
+            """, unsafe_allow_html=True)
+
+    else:
+        st.title("ℹ️ About")
+        st.write("AI-based disease prediction system using ML + NLP.")
