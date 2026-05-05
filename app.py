@@ -9,16 +9,18 @@ if not os.path.exists("model.pkl"):
 
 model = load_model()
 
-st.set_page_config(page_title="AI Health System", page_icon="🩺")
+st.set_page_config(page_title="AI Health Predictor", page_icon="🧠")
 
 # ---------- UI STYLE ----------
 st.markdown("""
 <style>
-body {
-    background-color: #0E1117;
-}
+body { background-color: #0E1117; }
 </style>
 """, unsafe_allow_html=True)
+
+# ---------- HEADER ----------
+st.title("🧠 AI Health Predictor")
+st.caption("Smart disease prediction using machine learning")
 
 # ---------- SMART NLP ----------
 def extract(text):
@@ -60,7 +62,7 @@ if "user" not in st.session_state:
     st.session_state.user = None
 
 if st.session_state.user is None:
-    st.title("🔐 Login / Register")
+    st.subheader("🔐 Login / Register")
 
     mode = st.selectbox("Mode", ["Login", "Register"])
     u = st.text_input("Username")
@@ -69,9 +71,9 @@ if st.session_state.user is None:
     if mode == "Register":
         if st.button("Register"):
             if register(u, p):
-                st.success("Registered")
+                st.success("Registered successfully")
             else:
-                st.error("User exists")
+                st.error("User already exists")
 
     else:
         if st.button("Login"):
@@ -86,10 +88,11 @@ else:
     st.sidebar.title(f"👤 {st.session_state.user}")
     page = st.sidebar.radio("Menu", ["Chat", "History", "About"])
 
+    # ---------- CHAT ----------
     if page == "Chat":
-        st.title("🩺 AI Health Assistant")
+        st.subheader("🩺 Describe your symptoms")
 
-        user_input = st.text_input("Describe your symptoms...")
+        user_input = st.text_input("Example: fever, headache, body pain")
 
         if st.button("Predict"):
             f = extract(user_input)
@@ -106,7 +109,7 @@ else:
 
             top3 = results[:3]
 
-            # ---------- UI ----------
+            # ---------- RESULT UI ----------
             st.markdown("## 🩺 Prediction Result")
 
             for i, (d, p) in enumerate(top3):
@@ -125,13 +128,17 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
+            # ---------- DISCLAIMER ----------
+            st.info("⚠️ This is not a medical diagnosis. Please consult a doctor.")
+
             save_history(st.session_state.user, {
                 "input": user_input,
                 "result": top3[0][0]
             })
 
+    # ---------- HISTORY ----------
     elif page == "History":
-        st.title("📜 History")
+        st.subheader("📜 Prediction History")
 
         history = get_history(st.session_state.user)[::-1]
 
@@ -148,6 +155,7 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
+    # ---------- ABOUT ----------
     else:
-        st.title("ℹ️ About")
-        st.write("AI-based disease prediction system using ML + NLP.")
+        st.subheader("ℹ️ About")
+        st.write("AI-based disease prediction system using machine learning and NLP.")
