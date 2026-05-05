@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import numpy as np
 from model import train_and_save, load_model
 from auth import register, login, save_history, get_history
 
@@ -9,75 +10,71 @@ if not os.path.exists("model.pkl"):
 
 model = load_model()
 
-st.set_page_config(page_title="AI Health Predictor", page_icon="🧠")
+st.set_page_config(page_title="AI Health Predictor")
 
-# ---------- UI STYLE ----------
-st.markdown("""
-<style>
-body { background-color: #0E1117; }
-</style>
-""", unsafe_allow_html=True)
-
-# ---------- HEADER ----------
-st.title("🧠 AI Health Predictor")
-st.caption("Smart disease prediction using machine learning")
-
-# ---------- SMART NLP ----------
+# ---------- NLP (STRICT MATCH WITH DATASET) ----------
 def extract(text):
     text = text.lower()
 
-    symptom_dict = {
-        "fever": ["fever", "temperature", "high temp"],
-        "cough": ["cough", "cold", "dry cough"],
-        "headache": ["headache", "head pain"],
-        "fatigue": ["fatigue", "tired", "weak"],
-        "body_pain": ["body pain", "body ache"],
-        "diarrhea": ["diarrhea", "loose motion"],
-        "vomiting": ["vomit", "vomiting"],
-        "sore_throat": ["throat", "sore throat"],
-        "chills": ["chill", "shiver"],
-        "nausea": ["nausea"],
-        "runny_nose": ["runny nose", "running nose"],
-        "congestion": ["blocked nose", "congestion"],
-        "sneezing": ["sneeze", "sneezing"],
-        "dizziness": ["dizziness", "light headed"],
-        "abdominal_pain": ["stomach", "abdominal", "bloating", "gas"],
-        "chest_pain": ["chest pain"],
-        "breathlessness": ["breath", "breathing issue"],
-        "rash": ["rash"],
-        "itching": ["itch", "itching"],
-        "weight_loss": ["weight loss"],
-        "loss_of_appetite": ["appetite", "not eating"]
-    }
+    def has(words):
+        return int(any(w in text for w in words))
 
-    features = []
-    for key in symptom_dict:
-        found = any(word in text for word in symptom_dict[key])
-        features.append(int(found))
+    return [
+        has(["fever","temperature"]),
+        has(["cough","cold","running nose"]),
+        has(["headache"]),
+        has(["fatigue","tired","weak"]),
+        has(["body pain","body ache"]),
+        has(["diarrhea","loose motion"]),
+        has(["vomit","vomiting"]),
+        has(["throat","sore throat"]),
+        has(["chill","shiver"]),
+        has(["nausea"]),
+        has(["runny nose","running nose"]),
+        has(["congestion","blocked nose"]),
+        has(["sneeze","sneezing"]),
+        has(["dizziness","light headed"]),
+        has(["stomach","abdominal","bloating","gas"]),
+        has(["chest pain"]),
+        has(["breath","breathing issue"]),
+        has(["rash"]),
+        has(["itch","itching"]),
+        has(["weight loss"]),
+        has(["appetite","loss of appetite"])
+    ]
 
-    return features
+# ---------- RULE CORRECTION ----------
+def apply_rules(results, f):
+    diarrhea, vomiting, nausea, abdominal = f[5], f[6], f[9], f[14]
+
+    # If stomach symptoms → prioritize correct diseases
+    if abdominal and (vomiting or nausea or diarrhea):
+        priority = {"Food Poisoning", "Stomach Infection"}
+        results = sorted(results, key=lambda x: (x[0] not in priority, -x[1]))
+
+    return results
 
 # ---------- AUTH ----------
 if "user" not in st.session_state:
     st.session_state.user = None
 
 if st.session_state.user is None:
-    st.subheader("🔐 Login / Register")
+    st.title("Login / Register")
 
-    mode = st.selectbox("Mode", ["Login", "Register"])
+    mode = st.selectbox("Mode", ["Login","Register"])
     u = st.text_input("Username")
     p = st.text_input("Password", type="password")
 
     if mode == "Register":
         if st.button("Register"):
-            if register(u, p):
-                st.success("Registered successfully")
+            if register(u,p):
+                st.success("Registered")
             else:
-                st.error("User already exists")
+                st.error("User exists")
 
     else:
         if st.button("Login"):
-            if login(u, p):
+            if login(u,p):
                 st.session_state.user = u
                 st.rerun()
             else:
@@ -85,14 +82,13 @@ if st.session_state.user is None:
 
 # ---------- MAIN ----------
 else:
-    st.sidebar.title(f"👤 {st.session_state.user}")
-    page = st.sidebar.radio("Menu", ["Chat", "History", "About"])
+    st.sidebar.title(st.session_state.user)
+    page = st.sidebar.radio("Menu",["Chat","History"])
 
-    # ---------- CHAT ----------
     if page == "Chat":
-        st.subheader("🩺 Describe your symptoms")
+        st.title("AI Health Assistant")
 
-        user_input = st.text_input("Example: fever, headache, body pain")
+        user_input = st.text_input("Enter symptoms")
 
         if st.button("Predict"):
             f = extract(user_input)
@@ -100,62 +96,34 @@ else:
             probs = model.predict_proba([f])[0]
             diseases = model.classes_
 
+            # smooth probabilities
+            probs = np.round(probs, 4)
+
             results = list(zip(diseases, probs))
             results.sort(key=lambda x: x[1], reverse=True)
 
-            # Remove healthy if symptoms exist
+            # remove healthy if real symptoms present
             if sum(f) >= 2:
                 results = [r for r in results if r[0].lower() != "healthy"]
 
+            # apply correction rules
+            results = apply_rules(results, f)
+
             top3 = results[:3]
 
-            # ---------- RESULT UI ----------
-            st.markdown("## 🩺 Prediction Result")
+            st.subheader("Prediction Result")
 
             for i, (d, p) in enumerate(top3):
-                color = "#00C853" if i == 0 else "#FFD600" if i == 1 else "#FF5252"
+                st.write(f"{i+1}. {d} ({round(p*100,2)}%)")
 
-                st.markdown(f"""
-                <div style="
-                    background: #1e1e2f;
-                    padding: 20px;
-                    border-radius: 12px;
-                    margin-bottom: 10px;
-                    box-shadow: 0px 0px 10px rgba(0,0,0,0.5);
-                ">
-                    <h3 style="color:{color};">{i+1}. {d}</h3>
-                    <p style="color:#aaa;">Confidence: {round(p*100,2)}%</p>
-                </div>
-                """, unsafe_allow_html=True)
-
-            # ---------- DISCLAIMER ----------
-            st.info("⚠️ This is not a medical diagnosis. Please consult a doctor.")
+            st.info("This is not a medical diagnosis. Consult a doctor.")
 
             save_history(st.session_state.user, {
                 "input": user_input,
                 "result": top3[0][0]
             })
 
-    # ---------- HISTORY ----------
     elif page == "History":
-        st.subheader("📜 Prediction History")
-
-        history = get_history(st.session_state.user)[::-1]
-
-        for item in history:
-            st.markdown(f"""
-            <div style="
-                background: #1e1e2f;
-                padding: 15px;
-                border-radius: 10px;
-                margin-bottom: 10px;
-            ">
-                <b>🧾 Input:</b> {item['input']}<br>
-                <b>🩺 Result:</b> {item['result']}
-            </div>
-            """, unsafe_allow_html=True)
-
-    # ---------- ABOUT ----------
-    else:
-        st.subheader("ℹ️ About")
-        st.write("AI-based disease prediction system using machine learning and NLP.")
+        st.title("History")
+        for item in get_history(st.session_state.user)[::-1]:
+            st.write(f"{item['input']} → {item['result']}")
